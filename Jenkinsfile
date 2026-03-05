@@ -1,19 +1,6 @@
 pipeline {
     agent any
 
-    parameters {
-        choice(
-            name: 'ACTION',
-            choices: ['DEPLOY', 'ROLLBACK'],
-            description: 'Select action'
-        )
-        string(
-            name: 'ROLLBACK_TAG',
-            defaultValue: 'v1.0',
-            description: 'Tag for rollback'
-        )
-    }
-
     environment {
         IMAGE_NAME = "YOUR_DOCKERHUB_USERNAME/devops-demo"
         DOCKER_SERVER = "ec2-user@DOCKER_EC2_IP"
@@ -21,8 +8,13 @@ pipeline {
 
     stages {
 
-        stage('Get Tag') {
-            when { expression { params.ACTION == 'DEPLOY' } }
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Get Git Tag') {
             steps {
                 script {
                     TAG = sh(
@@ -34,15 +26,13 @@ pipeline {
             }
         }
 
-        stage('Build Image') {
-            when { expression { params.ACTION == 'DEPLOY' } }
+        stage('Build Docker Image') {
             steps {
                 sh "docker build -t $IMAGE_NAME:$TAG ."
             }
         }
 
         stage('Docker Login') {
-            when { expression { params.ACTION == 'DEPLOY' } }
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-creds',
@@ -55,14 +45,12 @@ pipeline {
         }
 
         stage('Push Image') {
-            when { expression { params.ACTION == 'DEPLOY' } }
             steps {
                 sh "docker push $IMAGE_NAME:$TAG"
             }
         }
 
-        stage('Deploy') {
-            when { expression { params.ACTION == 'DEPLOY' } }
+        stage('Deploy to EC2') {
             steps {
                 sshagent(['ec2-ssh-key']) {
                     sh """
@@ -76,19 +64,60 @@ pipeline {
             }
         }
 
-        stage('Rollback') {
-            when { expression { params.ACTION == 'ROLLBACK' } }
+        stage('Verify Deployment') {
             steps {
+                script {
+                    userChoice = input(
+                        message: "Deployment completed. Verify application. Continue or Rollback?",
+                        parameters: [
+                            choice(
+                                name: 'ACTION',
+                                choices: ['CONTINUE', 'ROLLBACK'],
+                                description: 'Select next step'
+                            )
+                        ]
+                    )
+                }
+            }
+        }
+
+        stage('Rollback') {
+            when {
+                expression { userChoice == 'ROLLBACK' }
+            }
+            steps {
+                script {
+                    rollbackTag = input(
+                        message: "Enter tag to rollback",
+                        parameters: [
+                            string(
+                                name: 'ROLLBACK_TAG',
+                                defaultValue: 'v1.0',
+                                description: 'Docker image tag'
+                            )
+                        ]
+                    )
+                }
+
                 sshagent(['ec2-ssh-key']) {
                     sh """
                     ssh -o StrictHostKeyChecking=no $DOCKER_SERVER '
-                    docker pull $IMAGE_NAME:${params.ROLLBACK_TAG} &&
+                    docker pull $IMAGE_NAME:${rollbackTag} &&
                     docker rm -f devops-container || true &&
-                    docker run -d -p 80:80 --name devops-container $IMAGE_NAME:${params.ROLLBACK_TAG}
+                    docker run -d -p 80:80 --name devops-container $IMAGE_NAME:${rollbackTag}
                     '
                     """
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline completed successfully 🚀"
+        }
+        failure {
+            echo "Pipeline failed ❌"
         }
     }
 }
