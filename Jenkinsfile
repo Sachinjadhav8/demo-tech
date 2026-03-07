@@ -2,15 +2,15 @@ pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = "YOUR_DOCKERHUB_USERNAME/devops-demo"
-        DOCKER_SERVER = "ec2-user@DOCKER_EC2_IP"
+        IMAGE_NAME = "sachin820/devops-demo"
+        DOCKER_SERVER = "ec2-user@35.154.2.180"
     }
 
     stages {
 
         stage('Checkout') {
             steps {
-                checkout scm
+                git branch: 'main', url: 'https://github.com/Sachinjadhav8/demo-tech.git'
             }
         }
 
