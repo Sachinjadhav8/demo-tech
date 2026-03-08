@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = "sachin820/devops-demo"
-        DOCKER_SERVER = "ec2-user@35.154.2.180"
+        DOCKER_SERVER = "ubuntu@65.0.168.134"
     }
 
     stages {
